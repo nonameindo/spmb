@@ -1,247 +1,268 @@
-// Data dan state aplikasi
-const appState = {
-    currentQueueNumber: "A001",
-    nextQueueNumbers: ["A002", "A003", "A004"],
-    operators: [
-        { id: 1, name: "Operator 1", description: "Pendaftaran", status: "active", currentQueue: null },
-        { id: 2, name: "Operator 2", description: "Verifikasi Berkas", status: "idle", currentQueue: null },
-        { id: 3, name: "Operator 3", description: "Wawancara", status: "idle", currentQueue: null },
-        { id: 4, name: "Operator 4", description: "Tes Akademik", status: "idle", currentQueue: null },
-        { id: 5, name: "Operator 5", description: "Konsultasi Jurusan", status: "idle", currentQueue: null },
-        { id: 6, name: "Operator 6", description: "Pembayaran", status: "idle", currentQueue: null },
-        { id: 7, name: "Operator 7", description: "Pengambilan Kartu", status: "idle", currentQueue: null },
-        { id: 8, name: "Operator 8", description: "Layanan Khusus", status: "idle", currentQueue: null }
-    ],
-    callHistory: [],
-    speechSynth: window.speechSynthesis,
-    speechVolume: 0.7,
-    lastCallData: null,
-    announcementType: "airport",
+document.addEventListener('DOMContentLoaded', function() {
+    // Elemen DOM
+    const currentQueueNumberElement = document.getElementById('currentQueueNumber');
+    const currentOperatorElement = document.getElementById('currentOperator');
+    const currentDestinationElement = document.getElementById('currentDestination');
+    const queueNumberInput = document.getElementById('queueNumber');
+    const prevQueueButton = document.getElementById('prevQueue');
+    const nextQueueButton = document.getElementById('nextQueue');
+    const callQueueButton = document.getElementById('callQueue');
+    const resetQueueButton = document.getElementById('resetQueue');
+    const clearHistoryButton = document.getElementById('clearHistory');
+    const historyBody = document.getElementById('historyBody');
+    const currentDateElement = document.getElementById('currentDate');
+    const currentTimeElement = document.getElementById('currentTime');
+    const operatorButtons = document.querySelectorAll('.operator-btn');
+    const announcementSound = document.getElementById('announcementSound');
     
-    // Tambahan untuk riwayat pemanggilan
-    historyPage: 1,
-    historyPageSize: 10,
-    filteredHistory: [],
-    currentFilter: {
-        operator: "all",
-        date: "today",
-        search: ""
-    }
-};
-
-// DOM Elements tambahan
-const publicHistoryList = document.getElementById('public-history-list');
-const adminHistoryList = document.getElementById('admin-history-list');
-const totalCallsSpan = document.getElementById('total-calls');
-const todayCallsSpan = document.getElementById('today-calls');
-const filterOperator = document.getElementById('filter-operator');
-const filterDate = document.getElementById('filter-date');
-const searchHistory = document.getElementById('search-history');
-const searchBtn = document.getElementById('search-btn');
-const prevPageBtn = document.getElementById('prev-page');
-const nextPageBtn = document.getElementById('next-page');
-const pageInfoSpan = document.getElementById('page-info');
-const clearHistoryBtn = document.getElementById('clear-history-btn');
-
-// Inisialisasi aplikasi
-function initApp() {
-    // Set nilai awal
-    queueNumberInput.value = appState.currentQueueNumber;
+    // Data aplikasi
+    let currentQueueNumber = 5;
+    let selectedOperator = 1;
+    let calledHistory = JSON.parse(localStorage.getItem('queueHistory')) || [];
     
-    // Set volume awal untuk semua audio
-    callSound.volume = appState.speechVolume;
-    airportSound.volume = appState.speechVolume;
-    bellSound.volume = appState.speechVolume;
-    
-    // Update waktu
-    updateDateTime();
-    setInterval(updateDateTime, 1000);
-    
-    // Render operator status
-    renderOperatorStatus();
-    
-    // Render antrian berikutnya
-    renderNextQueue();
-    
-    // Render riwayat panggilan
-    renderPublicHistory();
-    renderAdminHistory();
-    updateHistoryStats();
-    
-    // Setup event listeners
-    setupEventListeners();
-    
-    // Cek Web Speech API support
-    if (!appState.speechSynth) {
-        alert("Browser Anda tidak mendukung fitur suara. Beberapa fungsi mungkin tidak berjalan optimal.");
-    }
-    
-    // Preload suara
-    preloadSounds();
-    
-    // Load riwayat dari localStorage jika ada
-    loadHistoryFromStorage();
-}
-
-// Load history dari localStorage
-function loadHistoryFromStorage() {
-    const savedHistory = localStorage.getItem('queueHistory');
-    if (savedHistory) {
-        try {
-            const parsedHistory = JSON.parse(savedHistory);
-            
-            // Convert string dates back to Date objects
-            parsedHistory.forEach(item => {
-                if (item.timestamp) {
-                    item.timestamp = new Date(item.timestamp);
-                }
+    // Inisialisasi
+    function init() {
+        updateDateTime();
+        setInterval(updateDateTime, 1000);
+        
+        loadQueueHistory();
+        updateDisplay();
+        
+        // Set operator aktif pertama
+        setActiveOperator(selectedOperator);
+        
+        // Event Listeners
+        prevQueueButton.addEventListener('click', () => changeQueueNumber(-1));
+        nextQueueButton.addEventListener('click', () => changeQueueNumber(1));
+        
+        callQueueButton.addEventListener('click', callQueue);
+        resetQueueButton.addEventListener('click', resetQueue);
+        clearHistoryButton.addEventListener('click', clearHistory);
+        
+        // Event listener untuk operator buttons
+        operatorButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                const operator = parseInt(this.getAttribute('data-operator'));
+                setActiveOperator(operator);
             });
-            
-            appState.callHistory = parsedHistory;
-            
-            // Update last call data
-            if (appState.callHistory.length > 0) {
-                appState.lastCallData = appState.callHistory[appState.callHistory.length - 1];
+        });
+        
+        // Event listener untuk input nomor antrian
+        queueNumberInput.addEventListener('change', function() {
+            let value = parseInt(this.value);
+            if (isNaN(value) || value < 1) value = 1;
+            if (value > 999) value = 999;
+            currentQueueNumber = value;
+            updateDisplay();
+        });
+    }
+    
+    // Update tanggal dan waktu
+    function updateDateTime() {
+        const now = new Date();
+        
+        // Format tanggal: Hari, DD Bulan YYYY
+        const optionsDate = { 
+            weekday: 'long', 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        };
+        const formattedDate = now.toLocaleDateString('id-ID', optionsDate);
+        currentDateElement.textContent = formattedDate;
+        
+        // Format waktu: HH:MM:SS
+        const hours = String(now.getHours()).padStart(2, '0');
+        const minutes = String(now.getMinutes()).padStart(2, '0');
+        const seconds = String(now.getSeconds()).padStart(2, '0');
+        currentTimeElement.textContent = `${hours}:${minutes}:${seconds}`;
+    }
+    
+    // Update tampilan antrian saat ini
+    function updateDisplay() {
+        // Format nomor antrian dengan 3 digit
+        const formattedNumber = String(currentQueueNumber).padStart(3, '0');
+        currentQueueNumberElement.textContent = formattedNumber;
+        queueNumberInput.value = currentQueueNumber;
+        
+        // Update operator dan tujuan
+        currentOperatorElement.textContent = `Operator ${selectedOperator}`;
+        currentDestinationElement.textContent = `Loket ${selectedOperator}`;
+    }
+    
+    // Mengubah nomor antrian
+    function changeQueueNumber(change) {
+        currentQueueNumber += change;
+        if (currentQueueNumber < 1) currentQueueNumber = 1;
+        if (currentQueueNumber > 999) currentQueueNumber = 999;
+        updateDisplay();
+    }
+    
+    // Set operator aktif
+    function setActiveOperator(operator) {
+        selectedOperator = operator;
+        
+        // Hapus kelas aktif dari semua tombol
+        operatorButtons.forEach(button => {
+            button.classList.remove('active');
+        });
+        
+        // Tambah kelas aktif ke tombol yang dipilih
+        const selectedButton = document.querySelector(`.operator-btn[data-operator="${operator}"]`);
+        if (selectedButton) {
+            selectedButton.classList.add('active');
+        }
+        
+        updateDisplay();
+    }
+    
+    // Panggil antrian
+    function callQueue() {
+        // Format nomor antrian
+        const formattedNumber = String(currentQueueNumber).padStart(3, '0');
+        const operatorText = `Operator ${selectedOperator}`;
+        const destinationText = `Loket ${selectedOperator}`;
+        
+        // Update tampilan
+        currentQueueNumberElement.textContent = formattedNumber;
+        currentOperatorElement.textContent = operatorText;
+        currentDestinationElement.textContent = destinationText;
+        
+        // Tambah ke riwayat
+        addToHistory(formattedNumber, operatorText);
+        
+        // Mainkan suara pengumuman
+        playAnnouncement(formattedNumber, operatorText);
+        
+        // Auto increment nomor antrian setelah dipanggil
+        currentQueueNumber++;
+        if (currentQueueNumber > 999) currentQueueNumber = 1;
+        updateDisplay();
+    }
+    
+    // Mainkan suara pengumuman
+    function playAnnouncement(queueNumber, operator) {
+        // Pertama mainkan suara pengumuman bandara
+        announcementSound.play();
+        
+        // Tunggu sebentar sebelum membacakan nomor antrian
+        setTimeout(() => {
+            // Gunakan SpeechSynthesis API untuk membacakan pengumuman
+            if ('speechSynthesis' in window) {
+                // Membatalkan semua pengucapan yang sedang berjalan
+                speechSynthesis.cancel();
                 
-                // Update display
-                if (appState.lastCallData.operatorId !== 0) {
-                    updateLastCalledDisplay(
-                        appState.lastCallData.queueNumber,
-                        appState.lastCallData.operatorName
-                    );
+                // Buat teks yang akan diucapkan
+                const announcementText = `Panggilan nomor antrian ${queueNumber.split('').join(' ')}. Silahkan menuju ke ${operator}.`;
+                
+                // Buat objek SpeechSynthesisUtterance
+                const utterance = new SpeechSynthesisUtterance(announcementText);
+                
+                // Atur bahasa ke Indonesia
+                utterance.lang = 'id-ID';
+                
+                // Atur suara menjadi wanita (jika tersedia)
+                const voices = speechSynthesis.getVoices();
+                const femaleVoice = voices.find(voice => 
+                    voice.lang.includes('id') && voice.name.toLowerCase().includes('female')
+                ) || voices.find(voice => voice.lang.includes('id')) || voices[0];
+                
+                if (femaleVoice) {
+                    utterance.voice = femaleVoice;
                 }
+                
+                // Atur kecepatan dan volume
+                utterance.rate = 0.9;
+                utterance.volume = 1;
+                utterance.pitch = 1;
+                
+                // Mainkan pengumuman
+                speechSynthesis.speak(utterance);
+            } else {
+                alert('Browser Anda tidak mendukung fitur text-to-speech. Mohon gunakan browser yang lebih baru.');
             }
-            
-            renderPublicHistory();
-            renderAdminHistory();
-            updateHistoryStats();
-            
-            console.log("Riwayat berhasil dimuat dari localStorage:", appState.callHistory.length, "panggilan");
-        } catch (error) {
-            console.error("Error loading history from localStorage:", error);
-        }
-    }
-}
-
-// Save history ke localStorage
-function saveHistoryToStorage() {
-    try {
-        localStorage.setItem('queueHistory', JSON.stringify(appState.callHistory));
-    } catch (error) {
-        console.error("Error saving history to localStorage:", error);
-    }
-}
-
-// ... (fungsi-fungsi sebelumnya tetap sama) ...
-
-// Render riwayat pemanggilan publik
-function renderPublicHistory() {
-    publicHistoryList.innerHTML = '';
-    
-    if (appState.callHistory.length === 0) {
-        publicHistoryList.innerHTML = '<div class="history-empty">Belum ada riwayat panggilan</div>';
-        return;
+        }, 2000); // Tunggu 2 detik untuk suara pengumuman bandara
     }
     
-    // Ambil 5 riwayat terbaru untuk tampilan publik
-    const recentHistory = appState.callHistory.slice(-5).reverse();
-    
-    recentHistory.forEach(item => {
-        const historyItem = document.createElement('div');
-        historyItem.className = 'public-history-item';
+    // Tambah ke riwayat
+    function addToHistory(queueNumber, operator) {
+        const now = new Date();
+        const timeString = now.toLocaleTimeString('id-ID', { 
+            hour: '2-digit', 
+            minute: '2-digit',
+            second: '2-digit'
+        });
         
-        const time = new Date(item.timestamp);
-        const timeString = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`;
-        const dateString = `${String(time.getDate()).padStart(2, '0')}/${String(time.getMonth() + 1).padStart(2, '0')}`;
+        const historyItem = {
+            id: Date.now(),
+            time: timeString,
+            queueNumber: queueNumber,
+            operator: operator,
+            status: 'Dipanggil'
+        };
         
-        historyItem.innerHTML = `
-            <div class="public-history-number">${item.queueNumber}</div>
-            <div class="public-history-details">
-                <div class="public-history-operator">${item.operatorName}</div>
-                <div class="public-history-time">${dateString} ${timeString}</div>
-                ${item.announcement ? `<div class="public-history-announcement">${item.announcement}</div>` : ''}
-            </div>
-        `;
+        calledHistory.unshift(historyItem);
         
-        publicHistoryList.appendChild(historyItem);
-    });
-}
-
-// Filter riwayat berdasarkan kriteria
-function filterHistory() {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-    
-    const weekAgo = new Date(today);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    
-    appState.filteredHistory = appState.callHistory.filter(item => {
-        const itemDate = new Date(item.timestamp);
+        // Simpan ke localStorage
+        localStorage.setItem('queueHistory', JSON.stringify(calledHistory));
         
-        // Filter berdasarkan operator
-        if (appState.currentFilter.operator !== "all") {
-            if (appState.currentFilter.operator === "skipped") {
-                if (item.operatorId !== 0) return false;
-            } else if (item.operatorId !== parseInt(appState.currentFilter.operator)) {
-                return false;
-            }
-        }
-        
-        // Filter berdasarkan tanggal
-        switch(appState.currentFilter.date) {
-            case "today":
-                if (itemDate < today) return false;
-                break;
-            case "yesterday":
-                if (itemDate < yesterday || itemDate >= today) return false;
-                break;
-            case "week":
-                if (itemDate < weekAgo) return false;
-                break;
-            case "all":
-                // Tidak filter tanggal
-                break;
-        }
-        
-        // Filter berdasarkan pencarian
-        if (appState.currentFilter.search) {
-            const searchTerm = appState.currentFilter.search.toLowerCase();
-            if (!item.queueNumber.toLowerCase().includes(searchTerm) &&
-                !item.operatorName.toLowerCase().includes(searchTerm) &&
-                !(item.announcement && item.announcement.toLowerCase().includes(searchTerm))) {
-                return false;
-            }
-        }
-        
-        return true;
-    });
-    
-    // Reverse untuk menampilkan yang terbaru dulu
-    appState.filteredHistory.reverse();
-}
-
-// Render riwayat pemanggilan admin
-function renderAdminHistory() {
-    adminHistoryList.innerHTML = '';
-    
-    // Filter history
-    filterHistory();
-    
-    if (appState.filteredHistory.length === 0) {
-        adminHistoryList.innerHTML = '<div class="history-empty">Tidak ada riwayat yang sesuai dengan filter</div>';
-        updatePaginationControls();
-        return;
+        // Update tampilan riwayat
+        loadQueueHistory();
     }
     
-    // Hitung pagination
-    const totalPages = Math.ceil(appState.filteredHistory.length / appState.historyPageSize);
-    appState.historyPage = Math.min(appState.historyPage, totalPages);
-    appState.historyPage = Math.max(1, appState.historyPage);
+    // Muat riwayat pemanggilan
+    function loadQueueHistory() {
+        historyBody.innerHTML = '';
+        
+        if (calledHistory.length === 0) {
+            historyBody.innerHTML = `
+                <tr>
+                    <td colspan="4" style="text-align: center; padding: 20px; color: #6c757d;">
+                        <i class="fas fa-history" style="font-size: 24px; margin-bottom: 10px; display: block;"></i>
+                        Belum ada riwayat pemanggilan
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+        
+        calledHistory.forEach(item => {
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${item.time}</td>
+                <td><strong>${item.queueNumber}</strong></td>
+                <td>${item.operator}</td>
+                <td class="status-called">${item.status}</td>
+            `;
+            historyBody.appendChild(row);
+        });
+    }
     
-    // Ambil data untuk halaman saat ini
-    const startIndex = (appState.historyPage - 1) * appState.historyPageSize;
-    const endIndex = startIndex + appState.historyPageSize;
-    const pageData =
+    // Reset antrian
+    function resetQueue() {
+        if (confirm('Apakah Anda yakin ingin mereset nomor antrian ke 1?')) {
+            currentQueueNumber = 1;
+            updateDisplay();
+        }
+    }
+    
+    // Hapus riwayat
+    function clearHistory() {
+        if (confirm('Apakah Anda yakin ingin menghapus semua riwayat pemanggilan?')) {
+            calledHistory = [];
+            localStorage.removeItem('queueHistory');
+            loadQueueHistory();
+        }
+    }
+    
+    // Inisialisasi aplikasi
+    init();
+    
+    // Memuat suara yang tersedia untuk SpeechSynthesis
+    if ('speechSynthesis' in window) {
+        // Chrome memerlukan event ini untuk memuat suara
+        speechSynthesis.addEventListener('voiceschanged', function() {
+            console.log('Suara TTS tersedia:', speechSynthesis.getVoices().length);
+        });
+    }
+});
